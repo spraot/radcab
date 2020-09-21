@@ -1,6 +1,6 @@
 version: '3.6'
 services:
-  mqttio:
+  radcab:
     build: 
       context: .
     privileged: true
@@ -8,4 +8,6 @@ services:
     volumes:
       - ./config.yml:/config.yml
       - /etc/revpi/config.rsc:/config.rsc
-
+    network_mode: host
+    environment:
+      - PYTHONDEBUG=DEBUG

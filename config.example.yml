@@ -1,11 +1,26 @@
-topic_prefix: pi/io
+topic_prefix: pi/buttons
 mqtt_server_ip: localhost
 mqtt_server_port: 1883
 mqtt_server_user: mqtt
 mqtt_server_password: 123abc
+R0: 100
 
-switches:
-  - id: office_lights
-    name: Office
-    output_id: O_1_1
-    md-icon: ceiling-light
+buttons:
+  bedroom1_left:
+    R: 60.4
+    channel: I_3
+  bedroom1_right:
+    R: 191
+    channel: I_3
+  office_left:
+    R: 60.4
+    channel: I_0
+  office_right:
+    R: 191
+    channel: I_0
+
+groups:
+  - - bedroom1_left
+    - bedroom1_right
+  - - office_left
+    - office_right
