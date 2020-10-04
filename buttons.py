@@ -34,7 +34,7 @@ class ButtonControl():
     max_readings = 2
     eq_readings = 2
     V_nom = 3.365
-    V_acc = 15
+    V_acc = 80
 
     default_button = {
     }
