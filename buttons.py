@@ -13,6 +13,7 @@ import os
 import sys
 import json
 import yaml
+import datetime
 import traceback
 import revpimodio2
 import paho.mqtt.client as mqtt
@@ -204,9 +205,9 @@ class ButtonControl():
             if closestV != -1 and sum(x == closestV for x in channel['readings']) >= self.eq_readings:
                 for i, button in enumerate(channel['buttons']):
                     is_pressed = button in channel['V'][closestV][1]
-                    if button['down'] != is_pressed:
+                    if (not not button['down']) != is_pressed:
                         self.mqtt_broadcast_state(button, is_pressed)
-                        button['down'] = is_pressed
+                        button['down'] = datetime.datetime.now() if is_pressed else False
 
             channel['cur_reading'] += 1
             if channel['cur_reading'] >= self.max_readings:
@@ -242,12 +243,17 @@ class ButtonControl():
        self.mqttclient.publish(button["mqtt_availability_topic"], payload=value, qos=0, retain=True)
 
     def mqtt_broadcast_state(self, button, is_pressed):
-        if is_pressed:
-            mqtt_payload = "down"
-        else:
-            mqtt_payload = "up"
-        logging.debug("Broadcasting MQTT message on topic: " + button["mqtt_state_topic"] + ", value: " + mqtt_payload)
-        self.mqttclient.publish(button["mqtt_state_topic"], payload=mqtt_payload, qos=0, retain=False)
+        #pressed_time = datetime.timedelta(total_seconds=0) if is_pressed else datetime.datetime.now() - button['down']
+        #
+        #mqtt_payload = {
+        #    'event': 'down' if is_pressed else 'up',
+        #    'pressed_time': pressed_time.total_seconds * 1000 + pressed_time.milliseconds
+        #}
+        #
+        #json_payload = json.dumps(mqtt_payload)
+        json_payload = 'down' if is_pressed else 'up'
+        logging.debug("Broadcasting MQTT message on topic: " + button["mqtt_state_topic"] + ", value: " + json_payload)
+        self.mqttclient.publish(button["mqtt_state_topic"], payload=json_payload, qos=0, retain=False)
 
 if __name__ == "__main__":
     mqttLightControl =  ButtonControl()
