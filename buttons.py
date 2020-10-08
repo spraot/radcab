@@ -14,11 +14,9 @@ import sys
 import json
 import yaml
 import datetime
-import traceback
 import revpimodio2
 import paho.mqtt.client as mqtt
 import time
-import threading
 import logging
 import atexit
 from itertools import chain, combinations
@@ -82,15 +80,12 @@ class ButtonControl():
         for name, button in self.buttons.items():
             button['id'] = name
 
-            if not 'output_id' in button:
-                button['output_id'] = button["id"]
-
             for k, v in self.default_button.items():
                 if not k in button:
                     button[k] = v
 
-            if not 'output_id' in button:
-                button['unique_id'] = button["id"]
+            if not 'unique_id' in button:
+                button['unique_id'] = button["id"].replace('/', '_')
 
             button["mqtt_config_topic"] = "{}/{}/{}/config".format(self.homeassistant_prefix, 'switch', button["id"])
             button["mqtt_state_topic"] = "{}/{}/state".format(self.topic_prefix, button["id"])
@@ -147,6 +142,7 @@ class ButtonControl():
 
     def configure_mqtt_for_button(self, button):
         button_configuration = {
+            "unique_id": button["unique_id"],
             "state_topic": button["mqtt_state_topic"],
             "availability_topic": button["mqtt_availability_topic"],
             "retain": False,
@@ -159,11 +155,6 @@ class ButtonControl():
             button_configuration['name'] = button["id"]
 
         button_configuration['device']['name'] = button_configuration["name"]
-
-        try:
-            button_configuration['unique_id'] = button["unique_id"]
-        except KeyError:
-            button_configuration['unique_id'] = button["id"]
 
         try:
             button_configuration['icon'] = "mdi:" + button["md-icon"]

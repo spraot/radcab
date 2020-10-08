@@ -10,4 +10,4 @@ services:
       - /etc/revpi/config.rsc:/config.rsc
     network_mode: host
     environment:
-      - PYTHONDEBUG=DEBUG
+      - LOGLEVEL=DEBUG
