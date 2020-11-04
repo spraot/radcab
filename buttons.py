@@ -160,7 +160,7 @@ class ButtonControl():
     def configure_mqtt_for_sensor(self, button):
         button_configuration = {
             "unique_id": button["unique_id"],
-            "name": button["name"],
+            "name": button["name"] + "_button",
             "state_topic": button["mqtt_state_topic"],
             "payload_on": "down",
             "payload_off": "up",
@@ -172,7 +172,7 @@ class ButtonControl():
                 "identifiers": [button["unique_id"]],
                 "manufacturer": "KUNBUS GmbH",
                 "model": "RevPi Analog Buttons",
-                "name": button["name"] + " button state",
+                "name": button["name"] + "_button",
                 "sw_version": "radcab"
             },
         }
