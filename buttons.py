@@ -21,6 +21,9 @@ import logging
 import atexit
 from itertools import chain, combinations
 
+SHORT_PRESS = 'short_press'
+LONG_PRESS = 'long_press'
+
 class ButtonControl():
     config_file = 'config.yml'
     topic_prefix = 'pi/io'
@@ -34,6 +37,8 @@ class ButtonControl():
     eq_readings = 2
     V_nom = 3.365
     V_acc = 80
+    unique_id_suffix = '_radcab'
+    long_press = None
 
     default_button = {
     }
@@ -71,24 +76,36 @@ class ButtonControl():
         with open(self.config_file, 'r') as f:
             config = yaml.safe_load(f)
 
-        for key in ['topic_prefix', 'homeassistant_prefix', 'mqtt_server_ip', 'mqtt_server_port', 'mqtt_server_user', 'mqtt_server_password', 'R0', 'buttons', 'groups']:
+        for key in ['topic_prefix', 'homeassistant_prefix', 'mqtt_server_ip', 'mqtt_server_port', 'mqtt_server_user', 'mqtt_server_password', 'R0', 'buttons', 'groups', 'unique_id_suffix', 'long_press']:
             try:
                 self.__setattr__(key, config[key])
             except KeyError:
                 pass
 
-        for name, button in self.buttons.items():
-            button['id'] = name
+        self.availability_topic = self.topic_prefix + '/bridge/state'
+
+        for id, button in self.buttons.items():
+            button['id'] = id
+
+            if not 'name' in button:
+                button['name'] = button["id"]
+
+            if not 'long_press' in button:
+                button['long_press'] = self.long_press
+
+            if button['long_press'] == -1:
+                button['long_press'] = None
+
+            if not 'unique_id' in button:
+                button['unique_id'] = button["id"].replace('/', '_')
+            button['unique_id'] += self.unique_id_suffix
 
             for k, v in self.default_button.items():
                 if not k in button:
                     button[k] = v
 
-            if not 'unique_id' in button:
-                button['unique_id'] = button["id"].replace('/', '_')
-
-            button["mqtt_config_topic"] = "{}/{}/{}/config".format(self.homeassistant_prefix, 'switch', button["id"])
             button["mqtt_state_topic"] = "{}/{}/state".format(self.topic_prefix, button["id"])
+            button["mqtt_action_topic"] = "{}/{}/action".format(self.topic_prefix, button["id"])
             button["mqtt_availability_topic"] = "{}/{}/availability".format(self.topic_prefix, button["id"])
 
         self.groups = [[self.buttons[b] for b in group] for group in self.groups]
@@ -140,30 +157,53 @@ class ButtonControl():
             channel['readings'] = [0]*self.max_readings
             channel['state'] = [False]*len(channel['buttons'])
 
-    def configure_mqtt_for_button(self, button):
+    def configure_mqtt_for_sensor(self, button):
         button_configuration = {
             "unique_id": button["unique_id"],
+            "name": button["name"],
             "state_topic": button["mqtt_state_topic"],
-            "availability_topic": button["mqtt_availability_topic"],
-            "retain": False,
-            "device": {"identifiers": button["id"]}
+            "payload_on": "down",
+            "payload_off": "up",
+            "availability": [
+                {'topic': self.availability_topic},
+                {'topic': button["mqtt_availability_topic"]},
+            ],
+            "device": {
+                "identifiers": [button["unique_id"]],
+                "manufacturer": "KUNBUS GmbH",
+                "model": "RevPi Analog Buttons",
+                "name": "Analog button {} Ohm".format(button['R']),
+                "sw_version": "radcab"
+            },
         }
 
-        try:
-            button_configuration['name'] = button["name"]
-        except KeyError:
-            button_configuration['name'] = button["id"]
-
-        button_configuration['device']['name'] = button_configuration["name"]
-
-        try:
-            button_configuration['icon'] = "mdi:" + button["md-icon"]
-        except KeyError:
-            pass
-
-        json_conf = json.dumps(c)
+        json_conf = json.dumps(button_configuration)
         logging.debug("Broadcasting homeassistant configuration for button: " + button["name"] + ":" + json_conf)
-        self.mqttclient.publish(button["mqtt_config_topic"], payload=json_conf, qos=0, retain=True)
+        config_topic = "{}/device_automation/{}/config".format(self.homeassistant_prefix, button["unique_id"])
+        self.mqttclient.publish(config_topic, payload=json_conf, qos=0, retain=True)
+
+    def configure_mqtt_for_button(self, button):
+        for press_type in [SHORT_PRESS, LONG_PRESS]:
+            button_configuration = {
+                "automation_type": "trigger",
+                "unique_id": button["unique_id"],
+                "topic": button["mqtt_action_topic"],
+                "payload": press_type,
+                "type": "button_"+press_type,
+                "subtype": "button_1",
+                "device": {
+                    "identifiers": [button["unique_id"]],
+                    "manufacturer": "KUNBUS GmbH",
+                    "model": "RevPi Analog Buttons",
+                    "name": button["name"] + "button",
+                    "sw_version": "radcab"
+                },
+            }
+
+            json_conf = json.dumps(button_configuration)
+            logging.debug("Broadcasting homeassistant configuration for button: " + button["name"] + ":" + json_conf)
+            config_topic = "{}/device_automation/{}/{}/config".format(self.homeassistant_prefix, button["unique_id"], press_type)
+            self.mqttclient.publish(config_topic, payload=json_conf, qos=0, retain=True)
         
     def start(self):
         logging.info("starting")
@@ -182,10 +222,10 @@ class ButtonControl():
         for channel in self.channels.values():
             v = self.read_channel(channel['id'])
 
-            closestV = 0 if v < 150 else -1
+            closestV = 0 if v < 150 else None
             for i in range(len(channel['V'])):
                 if abs(v-channel['V'][i][0]) < self.V_acc \
-                and (closestV == -1 or abs(channel['V'][closestV][0]-channel['V'][i][0])):
+                and (closestV is None or abs(channel['V'][closestV][0]-channel['V'][i][0])):
                     closestV = i
 
             channel['readings'][channel['cur_reading']] = closestV
@@ -193,11 +233,18 @@ class ButtonControl():
             if channel['id'] == 'AI_1' and v > 150:
                 logging.debug('on channel {} read value {}, closest buttons: {}'.format(channel['id'], v, ', '.join(x['id'] for x in channel['V'][closestV][1])))
 
-            if closestV != -1 and sum(x == closestV for x in channel['readings']) >= self.eq_readings:
+            if closestV is not None and sum(x == closestV for x in channel['readings']) >= self.eq_readings:
                 for i, button in enumerate(channel['buttons']):
                     is_pressed = button in channel['V'][closestV][1]
                     if (not not button['down']) != is_pressed:
                         self.mqtt_broadcast_state(button, is_pressed)
+                        if button['long_press'] is None:
+                            if is_pressed:
+                                self.mqtt_broadcast_action(button, SHORT_PRESS)
+                        elif not is_pressed:
+                            is_long_press = (datetime.datetime.now() - button['down']) / datetime.timedelta(milliseconds=1) >= button['long_press']:
+                            self.mqtt_broadcast_action(button, LONG_PRESS if is_long_press else SHORT_PRESS)
+
                         button['down'] = datetime.datetime.now() if is_pressed else False
 
             channel['cur_reading'] += 1
@@ -209,6 +256,8 @@ class ButtonControl():
 
     def programend(self):
         logging.info("stopping")
+
+        self.mqttclient.publish(self.availability_topic, payload="offline", qos=0, retain=True)
 
         for button in self.buttons.values():
             self.mqtt_broadcast_button_availability(button, "offline")
@@ -224,10 +273,13 @@ class ButtonControl():
         #Configure MQTT for buttons
         for button in self.buttons.values():
             self.configure_mqtt_for_button(button)
+            self.configure_mqtt_for_sensor(button)
 
         #Broadcast current button state to MQTT for buttons
         for button in self.buttons.values():
             self.mqtt_broadcast_button_availability(button, "online")
+
+        self.mqttclient.publish(self.availability_topic, payload="online", qos=0, retain=True)
 
     def mqtt_broadcast_button_availability(self, button, value):
        logging.debug("Broadcasting MQTT message on topic: " + button["mqtt_availability_topic"] + ", value: " + value)
@@ -245,6 +297,11 @@ class ButtonControl():
         json_payload = 'down' if is_pressed else 'up'
         logging.debug("Broadcasting MQTT message on topic: " + button["mqtt_state_topic"] + ", value: " + json_payload)
         self.mqttclient.publish(button["mqtt_state_topic"], payload=json_payload, qos=0, retain=False)
+
+
+    def mqtt_broadcast_action(self, button, action):
+        logging.debug("Broadcasting MQTT message on topic: " + button["mqtt_action_topic"] + ", value: " + action)
+        self.mqttclient.publish(button["mqtt_action_topic"], payload=action, qos=0, retain=False)
 
 if __name__ == "__main__":
     mqttLightControl =  ButtonControl()
