@@ -21,8 +21,8 @@ import logging
 import atexit
 from itertools import chain, combinations
 
-SHORT_PRESS = 'short_press'
-LONG_PRESS = 'long_press'
+SHORT_PRESS = 'click'
+LONG_PRESS = 'hold'
 
 class ButtonControl():
     config_file = 'config.yml'
@@ -105,7 +105,7 @@ class ButtonControl():
                     button[k] = v
 
             button["mqtt_state_topic"] = "{}/{}/state".format(self.topic_prefix, button["id"])
-            button["mqtt_action_topic"] = "{}/{}/action".format(self.topic_prefix, button["id"])
+            button["mqtt_click_topic"] = "{}/{}/click".format(self.topic_prefix, button["id"])
             button["mqtt_availability_topic"] = "{}/{}/availability".format(self.topic_prefix, button["id"])
 
         self.groups = [[self.buttons[b] for b in group] for group in self.groups]
@@ -186,17 +186,17 @@ class ButtonControl():
         for press_type in [SHORT_PRESS, LONG_PRESS]:
             button_configuration = {
                 "automation_type": "trigger",
-                "topic": button["mqtt_action_topic"],
-                "payload": press_type,
-                "type": "button_"+press_type,
-                "subtype": "button_1",
                 "device": {
                     "identifiers": [button["unique_id"]],
                     "manufacturer": "KUNBUS GmbH",
                     "model": "RevPi Analog Buttons",
-                    "name": button["name"] + " button " + press_type,
+                    "name": button["name"] + "_button",
                     "sw_version": "radcab"
                 },
+                "topic": button["mqtt_click_topic"],
+                "payload": press_type,
+                "type": "click",
+                "subtype": press_type,
             }
 
             json_conf = json.dumps(button_configuration)
@@ -239,12 +239,15 @@ class ButtonControl():
                         self.mqtt_broadcast_state(button, is_pressed)
                         if button['long_press'] is None:
                             if is_pressed:
-                                self.mqtt_broadcast_action(button, SHORT_PRESS)
-                        elif not is_pressed:
-                            is_long_press = (datetime.datetime.now() - button['down']) / datetime.timedelta(milliseconds=1) >= button['long_press']
-                            self.mqtt_broadcast_action(button, LONG_PRESS if is_long_press else SHORT_PRESS)
+                                self.mqtt_broadcast_click(button, SHORT_PRESS)
+                        elif not is_pressed and isinstance(button['down'], datetime.datetime):
+                            self.mqtt_broadcast_click(button, SHORT_PRESS)
 
                         button['down'] = datetime.datetime.now() if is_pressed else False
+                    elif is_pressed and isinstance(button['down'], datetime.datetime) and button['long_press'] is not None:
+                        if (datetime.datetime.now() - button['down']) / datetime.timedelta(milliseconds=1) >= button['long_press']:
+                            self.mqtt_broadcast_click(button, LONG_PRESS)
+                            button['down'] = True
 
             channel['cur_reading'] += 1
             if channel['cur_reading'] >= self.max_readings:
@@ -298,9 +301,9 @@ class ButtonControl():
         self.mqttclient.publish(button["mqtt_state_topic"], payload=json_payload, qos=0, retain=False)
 
 
-    def mqtt_broadcast_action(self, button, action):
-        logging.debug("Broadcasting MQTT message on topic: " + button["mqtt_action_topic"] + ", value: " + action)
-        self.mqttclient.publish(button["mqtt_action_topic"], payload=action, qos=0, retain=False)
+    def mqtt_broadcast_click(self, button, action):
+        logging.debug("Broadcasting MQTT message on topic: " + button["mqtt_click_topic"] + ", value: " + action)
+        self.mqttclient.publish(button["mqtt_click_topic"], payload=action, qos=0, retain=False)
 
 if __name__ == "__main__":
     mqttLightControl =  ButtonControl()
