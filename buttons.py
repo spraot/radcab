@@ -172,21 +172,20 @@ class ButtonControl():
                 "identifiers": [button["unique_id"]],
                 "manufacturer": "KUNBUS GmbH",
                 "model": "RevPi Analog Buttons",
-                "name": "Analog button {} Ohm".format(button['R']),
+                "name": button["name"] + " button state",
                 "sw_version": "radcab"
             },
         }
 
         json_conf = json.dumps(button_configuration)
         logging.debug("Broadcasting homeassistant configuration for button: " + button["name"] + ":" + json_conf)
-        config_topic = "{}/device_automation/{}/config".format(self.homeassistant_prefix, button["unique_id"])
+        config_topic = "{}/binary_sensor/{}/config".format(self.homeassistant_prefix, button["unique_id"])
         self.mqttclient.publish(config_topic, payload=json_conf, qos=0, retain=True)
 
     def configure_mqtt_for_button(self, button):
         for press_type in [SHORT_PRESS, LONG_PRESS]:
             button_configuration = {
                 "automation_type": "trigger",
-                "unique_id": button["unique_id"],
                 "topic": button["mqtt_action_topic"],
                 "payload": press_type,
                 "type": "button_"+press_type,
@@ -195,7 +194,7 @@ class ButtonControl():
                     "identifiers": [button["unique_id"]],
                     "manufacturer": "KUNBUS GmbH",
                     "model": "RevPi Analog Buttons",
-                    "name": button["name"] + "button",
+                    "name": button["name"] + " button " + press_type,
                     "sw_version": "radcab"
                 },
             }
@@ -242,7 +241,7 @@ class ButtonControl():
                             if is_pressed:
                                 self.mqtt_broadcast_action(button, SHORT_PRESS)
                         elif not is_pressed:
-                            is_long_press = (datetime.datetime.now() - button['down']) / datetime.timedelta(milliseconds=1) >= button['long_press']:
+                            is_long_press = (datetime.datetime.now() - button['down']) / datetime.timedelta(milliseconds=1) >= button['long_press']
                             self.mqtt_broadcast_action(button, LONG_PRESS if is_long_press else SHORT_PRESS)
 
                         button['down'] = datetime.datetime.now() if is_pressed else False
