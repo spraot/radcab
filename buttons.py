@@ -232,7 +232,7 @@ class ButtonControl():
             if closestV is not None:
                 down_buttons = channel['V'][closestV][1]
 
-                if len(down_buttons) > 0 and logging.isEnabledFor(logging.DEBUG):
+                if len(down_buttons) > 0 and logging.getLogger().isEnabledFor(logging.DEBUG):
                     logging.debug('on channel {} read value {}, closest buttons: {}'.format(channel['id'], v, ', '.join(x['id'] for x in down_buttons)))
                 
                 if sum(x == closestV for x in channel['readings']) >= self.eq_readings:
