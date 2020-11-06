@@ -229,25 +229,28 @@ class ButtonControl():
 
             channel['readings'][channel['cur_reading']] = closestV
 
-            if channel['id'] == 'AI_1' and v > 150:
-                logging.debug('on channel {} read value {}, closest buttons: {}'.format(channel['id'], v, ', '.join(x['id'] for x in channel['V'][closestV][1])))
+            if closestV is not None:
+                down_buttons = channel['V'][closestV][1]
 
-            if closestV is not None and sum(x == closestV for x in channel['readings']) >= self.eq_readings:
-                for i, button in enumerate(channel['buttons']):
-                    is_pressed = button in channel['V'][closestV][1]
-                    if (not not button['down']) != is_pressed:
-                        self.mqtt_broadcast_state(button, is_pressed)
-                        if button['long_press'] is None:
-                            if is_pressed:
+                if len(down_buttons) > 0 and logging.isEnabledFor(logging.DEBUG):
+                    logging.debug('on channel {} read value {}, closest buttons: {}'.format(channel['id'], v, ', '.join(x['id'] for x in down_buttons)))
+                
+                if sum(x == closestV for x in channel['readings']) >= self.eq_readings:
+                    for i, button in enumerate(channel['buttons']):
+                        is_pressed = button in down_buttons
+                        if (not not button['down']) != is_pressed:
+                            self.mqtt_broadcast_state(button, is_pressed)
+                            if button['long_press'] is None:
+                                if is_pressed:
+                                    self.mqtt_broadcast_click(button, SHORT_PRESS)
+                            elif not is_pressed and isinstance(button['down'], datetime.datetime):
                                 self.mqtt_broadcast_click(button, SHORT_PRESS)
-                        elif not is_pressed and isinstance(button['down'], datetime.datetime):
-                            self.mqtt_broadcast_click(button, SHORT_PRESS)
 
-                        button['down'] = datetime.datetime.now() if is_pressed else False
-                    elif is_pressed and isinstance(button['down'], datetime.datetime) and button['long_press'] is not None:
-                        if (datetime.datetime.now() - button['down']) / datetime.timedelta(milliseconds=1) >= button['long_press']:
-                            self.mqtt_broadcast_click(button, LONG_PRESS)
-                            button['down'] = True
+                            button['down'] = datetime.datetime.now() if is_pressed else False
+                        elif is_pressed and isinstance(button['down'], datetime.datetime) and button['long_press'] is not None:
+                            if (datetime.datetime.now() - button['down']) / datetime.timedelta(milliseconds=1) >= button['long_press']:
+                                self.mqtt_broadcast_click(button, LONG_PRESS)
+                                button['down'] = True
 
             channel['cur_reading'] += 1
             if channel['cur_reading'] >= self.max_readings:
