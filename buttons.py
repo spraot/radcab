@@ -221,10 +221,11 @@ class ButtonControl():
         for channel in self.channels.values():
             v = self.read_channel(channel['id'])
 
-            closestV = 0 if v < 150 else None
+            closestV = 0  #if v < 150 else None
             for i in range(len(channel['V'])):
-                if abs(v-channel['V'][i][0]) < self.V_acc \
-                and (closestV is None or abs(channel['V'][closestV][0]-channel['V'][i][0])):
+                dist = abs(v-channel['V'][i][0])
+                if dist < self.V_acc \
+                and (closestV is None or dist < abs(channel['V'][closestV][0]-channel['V'][i][0])):
                     closestV = i
 
             channel['readings'][channel['cur_reading']] = closestV
