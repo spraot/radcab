@@ -68,6 +68,11 @@ class ButtonControl():
          #Register program end event
         atexit.register(self.programend)
 
+        for button in self.buttons.values():
+            if not 'R' in button:
+                logging.info('Digital button {} with on channel {}'.format(button['name'], button['channel']))
+                self.rpi.io[button['channel']].reg_event(self.on_button_event, as_thread=True)
+
         logging.info("init done")
 
     def load_config(self):
@@ -110,6 +115,11 @@ class ButtonControl():
 
         self.groups = [[self.buttons[b] for b in group] for group in self.groups]
 
+        for group in self.groups:
+            for button in group:
+                if not 'R' in button:
+                    raise ValueError('Digital button cannot be in group ({})'.format(button['name']))
+
     def init_channels(self):
         def get_channel(id):
             try:
@@ -138,10 +148,13 @@ class ButtonControl():
 
             logging.info('Expect {:0.3f}V on channel {} when {} pressed'.format(v_int*0.001, channel_id, b_str))
 
-
         for button in self.buttons.values():
-            add_v(button['channel'], [button['R']], (button, ))
+            if hasattr(button, 'R'):
+                logging.info('Analog button {} with R={} on channel {}'.format(button['name'], button['R'], button['channel']))
+                add_v(button['channel'], [button['R']], (button, ))
+
             get_channel(button['channel'])['buttons'].append(button)
+
             button['down'] = False
 
         for group in self.groups:
@@ -171,7 +184,7 @@ class ButtonControl():
             "device": {
                 "identifiers": [button["unique_id"]],
                 "manufacturer": "KUNBUS GmbH",
-                "model": "RevPi Analog Buttons",
+                "model": "RevPi Buttons",
                 "name": button["name"] + "_button",
                 "sw_version": "radcab"
             },
@@ -189,7 +202,7 @@ class ButtonControl():
                 "device": {
                     "identifiers": [button["unique_id"]],
                     "manufacturer": "KUNBUS GmbH",
-                    "model": "RevPi Analog Buttons",
+                    "model": "RevPi Buttons",
                     "name": button["name"] + "_button",
                     "sw_version": "radcab"
                 },
@@ -259,6 +272,11 @@ class ButtonControl():
 
     def read_channel(self, channel):
         return self.rpi.io[channel].value
+
+    def on_button_event(self, name, value):
+        for button in self.channels[name]['buttons']:
+            logging.debug('button {} state changed to {}'.format(name, value))
+            self.mqtt_broadcast_state(button, value)
 
     def programend(self):
         logging.info("stopping")
