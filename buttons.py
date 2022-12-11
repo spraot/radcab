@@ -149,7 +149,7 @@ class ButtonControl():
             logging.info('Expect {:0.3f}V on channel {} when {} pressed'.format(v_int*0.001, channel_id, b_str))
 
         for button in self.buttons.values():
-            if hasattr(button, 'R'):
+            if 'R' in button:
                 logging.info('Analog button {} with R={} on channel {}'.format(button['name'], button['R'], button['channel']))
                 add_v(button['channel'], [button['R']], (button, ))
 
