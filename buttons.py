@@ -70,8 +70,8 @@ class ButtonControl():
 
         for button in self.buttons.values():
             if not 'R' in button:
-                logging.info('Digital button {} with on channel {}'.format(button['name'], button['channel']))
-                self.rpi.io[button['channel']].reg_event(self.on_button_event, as_thread=True)
+                logging.info('Digital button {} with on channel {} (high = 24V)'.format(button['name'], button['channel']))
+        #         self.rpi.io[button['channel']].reg_event(self.on_button_event, as_thread=True)
 
         logging.info("init done")
 
@@ -228,55 +228,64 @@ class ButtonControl():
         logging.info("MQTT client started")
 
         logging.info("started")
+        #self.rpi.mainloop(blocking=False)
         self.rpi.cycleloop(self.cycleloop, cycletime=15)
 
     def cycleloop(self, ct):
         for channel in self.channels.values():
             v = self.read_channel(channel['id'])
+            if not channel['id'].startswith('A'):
+                for button in channel['buttons']:
+                    self.update_button(button, v)
+            else:
+                closestV = 0  #if v < 150 else None
+                for i in range(len(channel['V'])):
+                    dist = abs(v-channel['V'][i][0])
+                    if dist < self.V_acc \
+                    and (closestV is None or dist < abs(channel['V'][closestV][0]-channel['V'][i][0])):
+                        closestV = i
 
-            closestV = 0  #if v < 150 else None
-            for i in range(len(channel['V'])):
-                dist = abs(v-channel['V'][i][0])
-                if dist < self.V_acc \
-                and (closestV is None or dist < abs(channel['V'][closestV][0]-channel['V'][i][0])):
-                    closestV = i
+                channel['readings'][channel['cur_reading']] = closestV
 
-            channel['readings'][channel['cur_reading']] = closestV
+                if closestV is not None:
+                    down_buttons = channel['V'][closestV][1]
 
-            if closestV is not None:
-                down_buttons = channel['V'][closestV][1]
+                    if len(down_buttons) > 0 and logging.getLogger().isEnabledFor(logging.DEBUG):
+                        logging.debug('on channel {} read value {}, closest buttons: {}'.format(channel['id'], v, ', '.join(x['id'] for x in down_buttons)))
+                    
+                    if sum(x == closestV for x in channel['readings']) >= self.eq_readings:
+                        for button in channel['buttons']:
+                            self.update_button(button, button in down_buttons)
 
-                if len(down_buttons) > 0 and logging.getLogger().isEnabledFor(logging.DEBUG):
-                    logging.debug('on channel {} read value {}, closest buttons: {}'.format(channel['id'], v, ', '.join(x['id'] for x in down_buttons)))
-                
-                if sum(x == closestV for x in channel['readings']) >= self.eq_readings:
-                    for i, button in enumerate(channel['buttons']):
-                        is_pressed = button in down_buttons
-                        if (not not button['down']) != is_pressed:
-                            self.mqtt_broadcast_state(button, is_pressed)
-                            if button['long_press'] is None:
-                                if is_pressed:
-                                    self.mqtt_broadcast_click(button, SHORT_PRESS)
-                            elif not is_pressed and isinstance(button['down'], datetime.datetime):
-                                self.mqtt_broadcast_click(button, SHORT_PRESS)
+                channel['cur_reading'] += 1
+                if channel['cur_reading'] >= self.max_readings:
+                    channel['cur_reading'] = 0
 
-                            button['down'] = datetime.datetime.now() if is_pressed else False
-                        elif is_pressed and isinstance(button['down'], datetime.datetime) and button['long_press'] is not None:
-                            if (datetime.datetime.now() - button['down']) / datetime.timedelta(milliseconds=1) >= button['long_press']:
-                                self.mqtt_broadcast_click(button, LONG_PRESS)
-                                button['down'] = True
+    def update_button(self, button, is_pressed):
+        if (not not button['down']) != is_pressed:
+            self.mqtt_broadcast_state(button, is_pressed)
+            if button['long_press'] is None:
+                if is_pressed:
+                    self.mqtt_broadcast_click(button, SHORT_PRESS)
+            elif not is_pressed and isinstance(button['down'], datetime.datetime):
+                self.mqtt_broadcast_click(button, SHORT_PRESS)
 
-            channel['cur_reading'] += 1
-            if channel['cur_reading'] >= self.max_readings:
-                channel['cur_reading'] = 0
+            button['down'] = datetime.datetime.now() if is_pressed else False
+        elif is_pressed and isinstance(button['down'], datetime.datetime) and button['long_press'] is not None:
+            if (datetime.datetime.now() - button['down']) / datetime.timedelta(milliseconds=1) >= button['long_press']:
+                self.mqtt_broadcast_click(button, LONG_PRESS)
+                button['down'] = True
 
     def read_channel(self, channel):
         return self.rpi.io[channel].value
 
-    def on_button_event(self, name, value):
-        for button in self.channels[name]['buttons']:
-            logging.debug('button {} state changed to {}'.format(name, value))
-            self.mqtt_broadcast_state(button, value)
+    def on_button_event(self, event):
+        logging.debug('button event: name={}, value={}'.format(event.name, event.value))
+        for button in self.channels[event.name]['buttons']:
+            logging.debug('button {} state changed to {}'.format(button['name'], event.value))
+            self.mqtt_broadcast_state(button, event.value)
+            if event.value:
+                self.mqtt_broadcast_click(button, SHORT_PRESS)
 
     def programend(self):
         logging.info("stopping")
