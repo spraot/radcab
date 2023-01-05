@@ -263,6 +263,8 @@ class ButtonControl():
 
     def update_button(self, button, is_pressed):
         if (not not button['down']) != is_pressed:
+            logging.info('button {} state changed to {}'.format(button['name'], is_pressed))
+            
             self.mqtt_broadcast_state(button, is_pressed)
             if button['long_press'] is None:
                 if is_pressed:
@@ -280,12 +282,9 @@ class ButtonControl():
         return self.rpi.io[channel].value
 
     def on_button_event(self, event):
-        logging.debug('button event: name={}, value={}'.format(event.name, event.value))
+        logging.info('button event: name={}, value={}'.format(event.name, event.value))
         for button in self.channels[event.name]['buttons']:
-            logging.debug('button {} state changed to {}'.format(button['name'], event.value))
-            self.mqtt_broadcast_state(button, event.value)
-            if event.value:
-                self.mqtt_broadcast_click(button, SHORT_PRESS)
+            self.update_button(button, event.value)
 
     def programend(self):
         logging.info("stopping")
