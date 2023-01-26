@@ -178,8 +178,8 @@ class ButtonControl():
             "payload_on": "down",
             "payload_off": "up",
             "availability": [
-                {'topic': self.availability_topic},
-                {'topic': button["mqtt_availability_topic"]},
+                {'topic': self.availability_topic, 'value_template': '{{ value_jason.state }}'},
+                {'topic': button["mqtt_availability_topic"], 'value_template': '{{ value_jason.state }}'},
             ],
             "device": {
                 "identifiers": [button["unique_id"]],
@@ -289,10 +289,8 @@ class ButtonControl():
     def programend(self):
         logging.info("stopping")
 
-        self.mqttclient.publish(self.availability_topic, payload="offline", qos=0, retain=True)
-
         for button in self.buttons.values():
-            self.mqtt_broadcast_button_availability(button, "offline")
+            self.mqtt_broadcast_button_availability(button, '{"state": "offline"}')
 
         self.mqttclient.disconnect()
         self.rpi.exit()
@@ -309,13 +307,14 @@ class ButtonControl():
 
         #Broadcast current button state to MQTT for buttons
         for button in self.buttons.values():
-            self.mqtt_broadcast_button_availability(button, "online")
+            self.mqtt_broadcast_button_availability(button, '{"state": "online"}')
 
-        self.mqttclient.publish(self.availability_topic, payload="online", qos=0, retain=True)
+        self.mqttclient.publish(self.availability_topic, payload='{"state": "online"}', qos=1, retain=True)
+        self.mqttclient.will_set(self.availability_topic, payload='{"state": "offline"}', qos=1, retain=True)
 
     def mqtt_broadcast_button_availability(self, button, value):
        logging.debug("Broadcasting MQTT message on topic: " + button["mqtt_availability_topic"] + ", value: " + value)
-       self.mqttclient.publish(button["mqtt_availability_topic"], payload=value, qos=0, retain=True)
+       self.mqttclient.publish(button["mqtt_availability_topic"], payload=value, qos=1, retain=True)
 
     def mqtt_broadcast_state(self, button, is_pressed):
         #pressed_time = datetime.timedelta(total_seconds=0) if is_pressed else datetime.datetime.now() - button['down']
