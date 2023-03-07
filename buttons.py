@@ -289,12 +289,12 @@ class ButtonControl():
     def programend(self):
         logging.info("stopping")
 
+        #Broadcast current button state to MQTT for buttons
         for button in self.buttons.values():
-            self.mqtt_broadcast_button_availability(button, '{"state": "offline"}')
+            self.mqtt_broadcast_button_availability(button, '')
 
         self.mqttclient.disconnect()
         self.rpi.exit()
-        time.sleep(0.5)
         logging.info("stopped")
 
     def mqtt_on_connect(self, client, userdata, flags, rc):
