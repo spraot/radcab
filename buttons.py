@@ -62,7 +62,7 @@ class ButtonControl():
         self.mqttclient.on_connect = self.mqtt_on_connect
 
         #RPI init
-        self.rpi = revpimodio2.RevPiModIO(autorefresh=True, direct_output=True, configrsc='/config.rsc')
+        self.rpi = revpimodio2.RevPiModIO(autorefresh=True, shared_procimg=True, configrsc='/config.rsc')
         self.rpi.handlesignalend(self.programend)
 
          #Register program end event
