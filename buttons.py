@@ -24,7 +24,11 @@ from itertools import chain, combinations
 
 logger = logging.getLogger()
 logHandler = logging.StreamHandler()
-formatter = jsonlogger.JsonFormatter('%(message)%(levelname)', timestamp='dt')
+formatter = jsonlogger.JsonFormatter(
+    '%(message)%(levelname)', 
+    timestamp='dt',
+    rename_fields={"levelname": "level"},
+)
 logHandler.setFormatter(formatter)
 logger.addHandler(logHandler)
 logger.setLevel(os.environ.get('LOGLEVEL', 'INFO'))
