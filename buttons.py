@@ -18,8 +18,16 @@ import revpimodio2
 import paho.mqtt.client as mqtt
 import time
 import logging
+from pythonjsonlogger import jsonlogger
 import atexit
 from itertools import chain, combinations
+
+logger = logging.getLogger()
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter('%(message)%(levelname)', timestamp='dt')
+logHandler.setFormatter(formatter)
+logger.addHandler(logHandler)
+logger.setLevel(os.environ.get('LOGLEVEL', 'INFO'))
 
 SHORT_PRESS = 'click'
 LONG_PRESS = 'hold'
@@ -48,8 +56,7 @@ class ButtonControl():
     channels = {}
 
     def __init__(self):
-        logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), format='%(asctime)s;<%(levelname)s>;%(message)s')
-        logging.info("Init")
+        logger.info("Init")
 
         if len(sys.argv) > 1:
             self.config_file = sys.argv[1]
@@ -70,13 +77,13 @@ class ButtonControl():
 
         for button in self.buttons.values():
             if not 'R' in button:
-                logging.info('Digital button {} with on channel {} (high = 24V)'.format(button['name'], button['channel']))
+                logger.info('Digital button {} with on channel {} (high = 24V)'.format(button['name'], button['channel']))
         #         self.rpi.io[button['channel']].reg_event(self.on_button_event, as_thread=True)
 
-        logging.info("init done")
+        logger.info("init done")
 
     def load_config(self):
-        logging.info("Reading config from "+self.config_file)
+        logger.info("Reading config from "+self.config_file)
 
         with open(self.config_file, 'r') as f:
             config = yaml.safe_load(f)
@@ -146,11 +153,11 @@ class ButtonControl():
             else:
                 b_str = 'buttons {} are'.format(', '.join(x['id'] for x in b))
 
-            logging.info('Expect {:0.3f}V on channel {} when {} pressed'.format(v_int*0.001, channel_id, b_str))
+            logger.info('Expect {:0.3f}V on channel {} when {} pressed'.format(v_int*0.001, channel_id, b_str))
 
         for button in self.buttons.values():
             if 'R' in button:
-                logging.info('Analog button {} with R={} on channel {}'.format(button['name'], button['R'], button['channel']))
+                logger.info('Analog button {} with R={} on channel {}'.format(button['name'], button['R'], button['channel']))
                 add_v(button['channel'], [button['R']], (button, ))
 
             get_channel(button['channel'])['buttons'].append(button)
@@ -159,7 +166,7 @@ class ButtonControl():
 
         for group in self.groups:
             if len(set([b['channel'] for b in group])) > 1:
-                logging.error('All buttons in group must have the same channel, skipping processing of group '+str(group))
+                logger.error('All buttons in group must have the same channel, skipping processing of group '+str(group))
             else:
                 for combo in chain.from_iterable(combinations(group, r) for r in range(len(group)+1)):
                     if len(combo) > 1:
@@ -191,7 +198,7 @@ class ButtonControl():
         }
 
         json_conf = json.dumps(button_configuration)
-        logging.debug("Broadcasting homeassistant configuration for button: " + button["name"] + ":" + json_conf)
+        logger.debug("Broadcasting homeassistant configuration for button: " + button["name"] + ":" + json_conf)
         config_topic = "{}/binary_sensor/{}/config".format(self.homeassistant_prefix, button["unique_id"])
         self.mqttclient.publish(config_topic, payload=json_conf, qos=0, retain=True)
 
@@ -213,21 +220,21 @@ class ButtonControl():
             }
 
             json_conf = json.dumps(button_configuration)
-            logging.debug("Broadcasting homeassistant configuration for button: " + button["name"] + ":" + json_conf)
+            logger.debug("Broadcasting homeassistant configuration for button: " + button["name"] + ":" + json_conf)
             config_topic = "{}/device_automation/{}/{}/config".format(self.homeassistant_prefix, button["unique_id"], press_type)
             self.mqttclient.publish(config_topic, payload=json_conf, qos=0, retain=True)
         
     def start(self):
-        logging.info("starting")
+        logger.info("starting")
 
         #MQTT startup
-        logging.info("Starting MQTT client")
+        logger.info("Starting MQTT client")
         self.mqttclient.username_pw_set(self.mqtt_server_user, password=self.mqtt_server_password)
         self.mqttclient.connect(self.mqtt_server_ip, self.mqtt_server_port, 60)
         self.mqttclient.loop_start()
-        logging.info("MQTT client started")
+        logger.info("MQTT client started")
 
-        logging.info("started")
+        logger.info("started")
         #self.rpi.mainloop(blocking=False)
         self.rpi.cycleloop(self.cycleloop, cycletime=15)
 
@@ -250,8 +257,8 @@ class ButtonControl():
                 if closestV is not None:
                     down_buttons = channel['V'][closestV][1]
 
-                    if len(down_buttons) > 0 and logging.getLogger().isEnabledFor(logging.DEBUG):
-                        logging.debug('on channel {} read value {}, closest buttons: {}'.format(channel['id'], v, ', '.join(x['id'] for x in down_buttons)))
+                    if len(down_buttons) > 0 and logger.isEnabledFor(logger.debug):
+                        logger.debug('on channel {} read value {}, closest buttons: {}'.format(channel['id'], v, ', '.join(x['id'] for x in down_buttons)))
                     
                     if sum(x == closestV for x in channel['readings']) >= self.eq_readings:
                         for button in channel['buttons']:
@@ -263,7 +270,7 @@ class ButtonControl():
 
     def update_button(self, button, is_pressed):
         if (not not button['down']) != is_pressed:
-            logging.info('button {} state changed to {}'.format(button['name'], is_pressed))
+            logger.info('button {} state changed to {}'.format(button['name'], is_pressed))
             
             self.mqtt_broadcast_state(button, is_pressed)
             if button['long_press'] is None:
@@ -282,12 +289,12 @@ class ButtonControl():
         return self.rpi.io[channel].value
 
     def on_button_event(self, event):
-        logging.info('button event: name={}, value={}'.format(event.name, event.value))
+        logger.info('button event: name={}, value={}'.format(event.name, event.value))
         for button in self.channels[event.name]['buttons']:
             self.update_button(button, event.value)
 
     def programend(self):
-        logging.info("stopping")
+        logger.info("stopping")
 
         #Broadcast current button state to MQTT for buttons
         for button in self.buttons.values():
@@ -295,10 +302,10 @@ class ButtonControl():
 
         self.mqttclient.disconnect()
         self.rpi.exit()
-        logging.info("stopped")
+        logger.info("stopped")
 
     def mqtt_on_connect(self, client, userdata, flags, rc):
-        logging.info("MQTT client connected with result code "+str(rc))
+        logger.info("MQTT client connected with result code "+str(rc))
 
         #Configure MQTT for buttons
         for button in self.buttons.values():
@@ -313,7 +320,7 @@ class ButtonControl():
         self.mqttclient.will_set(self.availability_topic, payload='{"state": "offline"}', qos=1, retain=True)
 
     def mqtt_broadcast_button_availability(self, button, value):
-       logging.debug("Broadcasting MQTT message on topic: " + button["mqtt_availability_topic"] + ", value: " + value)
+       logger.debug("Broadcasting MQTT message on topic: " + button["mqtt_availability_topic"] + ", value: " + value)
        self.mqttclient.publish(button["mqtt_availability_topic"], payload=value, qos=1, retain=True)
 
     def mqtt_broadcast_state(self, button, is_pressed):
@@ -326,12 +333,12 @@ class ButtonControl():
         #
         #json_payload = json.dumps(mqtt_payload)
         json_payload = 'down' if is_pressed else 'up'
-        logging.debug("Broadcasting MQTT message on topic: " + button["mqtt_state_topic"] + ", value: " + json_payload)
+        logger.debug("Broadcasting MQTT message on topic: " + button["mqtt_state_topic"] + ", value: " + json_payload)
         self.mqttclient.publish(button["mqtt_state_topic"], payload=json_payload, qos=0, retain=False)
 
 
     def mqtt_broadcast_click(self, button, action):
-        logging.debug("Broadcasting MQTT message on topic: " + button["mqtt_click_topic"] + ", value: " + action)
+        logger.debug("Broadcasting MQTT message on topic: " + button["mqtt_click_topic"] + ", value: " + action)
         self.mqttclient.publish(button["mqtt_click_topic"], payload=action, qos=0, retain=False)
 
 if __name__ == "__main__":
